@@ -1,0 +1,1545 @@
+<div id="component-1425676698755"></div>
+<script>
+/* loadLayoutComponent parameters: (selector, component-id) */
+avo.api.layout.loadLayoutComponent("#component-1425676698755", "261");
+</script>
+<div class="report-header"></div>
+<select id="start-date" onchange="onStartDateChange()">
+  <option value="" selected="selected"></option>
+</select>
+<select id="end-date" onchange="onEndDateChange()">
+  <option value="" selected="selected"></option>
+</select>
+<button onClick="onGo()">Go</button>
+<button class="latency-link" style="float:right"><a href="https://avocado/reports/162740" target="_blank" style="text-decoration:none">Latency</a></button>
+<button class="errors-link" style="float:right"><a href="https://avocado/reports/159712" target="_blank" style="text-decoration:none">Usage</a></button>
+<div class="line" style="background-color:black; height:2px"></div>
+
+<div class="pass-rate-title" style="display:inline-block; width:100%; float:left; font-size:20px; background-color:lightgrey; text-align:center;"></div>
+<div class="error-chart-by-build" style="display:inline-block; width:45%; float:left;"></div>
+<div class="error-chart-by-appname" style="display:inline-block; width:55%; float:left;"></div>
+<div class="error-chart-by-scenario" style="display:inline-block; width:33%; float:left;"></div>
+<div class="error-chart-by-region" style="display:inline-block; width:33%; float:left;"></div>
+<div class="error-chart-by-protocol" style="display:inline-block; width:33%; float:left;"></div>
+
+<div class="filters-box" style="border-style:solid; border-width:2px; border-color:black; display:inline-block; width:100%; float:left;">
+  <h3>Filters</h3>
+  <label>Build:
+    <select id="build" onchange="onBuildChange()">
+      <option value="None" selected="selected">None</option>
+    </select>
+  </label>
+  <label>Application:
+    <select id="appName" onchange="onAppChange()">
+      <option value="None" selected="selected">None</option>
+    </select>
+  </label>
+  <label>Scenario:
+    <select id="scenarioType" onchange="onScenarioChange()">
+      <option value="None" selected="selected">None</option>
+    </select>
+  </label>
+  <label>Region:
+    <select id="region" onchange="onRegionChange()">
+      <option value="None" selected="selected">None</option>
+    </select>
+  </label>
+  <label>Protocol:
+    <select id="protocol" onchange="onProtocolChange()">
+      <option value="None" selected="selected">None</option>
+    </select>
+  </label>
+  <button style="margin-left:2em; background-color:orange; font-weight:bold;" onClick="updateErrorCharts()">Filter</button>
+</div>
+
+<div class="line" style="background-color:black; height:2px; display:block; width:100%; float:left;"></div>
+
+<div class="error-cat-title" style="display:inline-block; width:100%; float:left; font-size:20px; background-color:lightgrey; text-align:center;"></div>
+<div class="error-cat-by-build" style="display:inline-block; width:45%; float:left;"></div>
+<div class="error-cat-by-appname" style="display:inline-block; width:55%; float:left;"></div>
+<div class="error-cat-by-scenario" style="display:inline-block; width:33%; float:left;"></div>
+<div class="error-cat-by-region" style="display:inline-block; width:33%; float:left;"></div>
+<div class="error-cat-by-protocol" style="display:inline-block; width:33%; float:left;"></div>
+
+<div class="error-code-title" style="display:inline-block; width:100%; float:left; font-size:20px; background-color:lightgrey; text-align:center;"></div>
+<div class="error-code-by-build" style="display:inline-block; width:18%; float:left;"></div>
+<div class="error-code-by-appname" style="display:inline-block; width:18%; float:left;"></div>
+<div class="error-code-by-scenario" style="display:inline-block; width:18%; float:left;"></div>
+<div class="error-code-by-region" style="display:inline-block; width:18%; float:left;"></div>
+<div class="error-code-by-protocol" style="display:inline-block; width:28%; float:left;"></div>
+
+<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/linq.js/2.2.0.2/linq.min.js"></script>
+
+<script>  
+  // Modify these arrays to add, remove, or change charts
+  var linqColumns = [
+    '$.build',
+    '$.scenarioType',
+    '$.region',
+    '$.protocol',
+    '$.appName'
+  ];  
+  var dashboardChartClasses = [
+    ".error-chart-by-build",
+    ".error-chart-by-scenario",
+    ".error-chart-by-region",
+    ".error-chart-by-protocol",
+    ".error-chart-by-appname"
+  ];
+  var errorChartClasses = [
+    ".error-cat-by-build",
+    ".error-cat-by-scenario",
+    ".error-cat-by-region",
+    ".error-cat-by-protocol",
+    ".error-cat-by-appname"
+  ];  
+  var errorCodeClasses = [
+    ".error-code-by-build",
+    ".error-code-by-appname",
+    ".error-code-by-scenario",
+    ".error-code-by-region",
+    ".error-code-by-protocol"
+  ];
+  var titles = [
+    'by Build',
+    'by Scenario',
+    'by Region',
+    'by Protocol',
+    'by Application (Top 10)'
+  ];
+  var codeTitles = [
+    'by Build',
+    'by Application (Top 10)',
+    'by Scenario',
+    'by Region',
+    'by Protocol',
+  ];
+  var chartTypes = [
+    'build',
+    'appname',
+    'scenario',
+    'region',
+    'protocol'
+  ];
+  
+  var currentData = [];
+  var currentDateRangeData = [];
+  var currentStartDate = "";
+  var currentEndDate = "";
+  var allDays = [];
+  var allSeriesData = [];
+  var allErrCatSersData = [];
+  var allErrCodeSersData = [];
+  
+  var topTenAppsData;
+  var errorCategories = [];
+  var currentErrorCodes = [];
+  
+  // Store filter feature information
+  // Must create functions for each filter field
+  var filterTypes = {};
+  var selectedFilters = {};
+  
+  var frequency = .3;
+  var colors = [];
+  for (var i = 0; i < 32; ++i) {
+     red   = Math.sin(frequency*i + 0) * 127 + 128;
+     green = Math.sin(frequency*i + 2) * 127 + 128;
+     blue  = Math.sin(frequency*i + 4) * 127 + 128;
+  
+     //document.write( '<font color="' + RGB2Color(red,green,blue) + '">&#9608;</font>');
+     colors.push(RGB2Color(red,green,blue));
+  }
+  
+  function RGB2Color(r,g,b) {
+    return '#' + byte2Hex(r) + byte2Hex(g) + byte2Hex(b);
+  }
+
+  function byte2Hex(n) {
+    var nybHexString = "0123456789ABCDEF";
+    return String(nybHexString.substr((n >> 4) & 0x0F,1)) + nybHexString.substr(n & 0x0F,1);
+  }
+  
+  function filterBuild(r) {
+    if (typeof selectedFilters["build"] === "undefined" || selectedFilters["build"] == null || selectedFilters["build"] == "None") {
+      return r.build;
+    } else {
+      return r.build == selectedFilters["build"];
+    }
+  }
+  
+  function filterAppName(r) {
+    if (typeof selectedFilters["appName"] === "undefined" || selectedFilters["build"] == null || selectedFilters["appName"] == "None" ) {
+      return r.appName;
+    } else {
+      return r.appName == selectedFilters["appName"];
+    }
+  }
+  
+  function filterScenario(r) {
+    if (typeof selectedFilters["scenarioType"] === "undefined" || selectedFilters["build"] == null || selectedFilters["scenarioType"] == "None") {
+      return r.scenarioType;
+    } else {
+      return r.scenarioType == selectedFilters["scenarioType"];
+    }
+  }
+  
+  function filterRegion(r) {
+    if (typeof selectedFilters["region"] === "undefined" || selectedFilters["build"] == null || selectedFilters["region"] == "None") {
+      return r.region;
+    } else {
+      return r.region == selectedFilters["region"];
+    }
+  }
+  
+  function filterProtocol(r) {
+    if (typeof selectedFilters["protocol"] === "undefined" || selectedFilters["build"] == null || selectedFilters["protocol"] == "None") {
+      return r.protocol;
+    } else {
+      return r.protocol == selectedFilters["protocol"];
+    }
+  }
+
+  /* Create and render the header view */
+  var header = new avo.api.layout.Header({ report: report });
+  $('.report-header').html(header.render().el);
+  
+  function getAllDays() {
+    Enumerable
+    .From(currentData)
+    .OrderBy('$.day')
+    .GroupBy('$.day')
+    .ForEach(function(g) {
+      allDays.push(g.source[0].day);
+    });  
+    allDays.sort();
+    tt1 = document.getElementById('start-date');
+    tt2 = document.getElementById('end-date');
+    for(var i = 0; i < allDays.length; i++) {
+      tt1.options[tt1.options.length] = new Option(allDays[i], allDays[i]);
+      tt2.options[tt2.options.length] = new Option(allDays[i], allDays[i]);
+    }
+  }
+  
+  function filterDropDowns() {
+    filter1 = document.getElementById('build');
+    filter2 = document.getElementById('scenarioType');
+    filter3 = document.getElementById('region');
+    filter4 = document.getElementById('protocol');
+    filter5 = document.getElementById('appName');
+    
+    var filterFields = [];
+    linqColumns.forEach(function(column) {
+      filterFields.push(column.substring(2));
+    });
+    
+    var filters = [filter1, filter2, filter3, filter4, filter5];
+    filters.forEach(function(filter, index) {
+      for(var i = 0; i < filterTypes[filterFields[index]].length; i++) {
+        filter.options[filter.options.length] = new Option(filterTypes[filterFields[index]][i], filterTypes[filterFields[index]][i]);
+      }
+    });
+  }
+  
+  function initializeDateRange() {
+    var today = new Date(Date.now());
+    var initialStartDate = new Date();
+    var initialEndDate = new Date();
+    
+    initialStartDate.setDate(today.getDate() - 9);
+    initialEndDate.setDate(today.getDate() - 2);
+    
+    currentStartDate = initialStartDate.toLocaleDateString("en-US");
+    currentEndDate = initialEndDate.toLocaleDateString("en-US");
+
+    $('#start-date option').html(currentStartDate);
+    $('#start-date option').val(currentStartDate);
+    $('#end-date option').html(currentEndDate);
+    $('#end-date option').val(currentEndDate);
+  }
+  
+  function onStartDateChange() {
+    //console.dir("onStartDateChange");
+    currentStartDate = document.getElementById("start-date").value;
+    //console.dir(currentStartDate);
+  }
+  
+  function onEndDateChange() {
+    //console.dir("onEndDateChange");
+    currentEndDate = document.getElementById("end-date").value;
+    //console.dir(currentEndDate);
+  }
+  
+  function setDateRange(startDate, endDate) {
+    var start = new Date(startDate);
+    var end = new Date(endDate);
+    currentDateRangeData = 
+      Enumerable
+        .From(currentData)
+        .Where(function(r) { 
+          var day = new Date(r.day);
+          return day >= start && day <= end; 
+        })
+        .ToArray();
+  }
+  
+  function getLinqData(data, num) {
+    return Enumerable
+      .From(data[num].data)
+      .Where(function(r) { return r.env == "PROD" && r.error_category != 'OAuthNotAvailable'; })
+      .ToArray();
+  }
+  
+  function prepareData(data) {
+    currentData = getLinqData(data, 366141);
+    getAllDays();
+  }
+  
+  function getTopTenApps(protocol) {
+    var appArray = [];
+
+    if(protocol != null) {
+      Enumerable
+        .From(currentDateRangeData)
+        .Where(function(r) { return r.protocol == protocol })
+        .GroupBy('$.appName')
+        .ForEach(function(g) {
+          appArray.push({
+            name: g.Key(),
+            appName: g.source[0].appName,
+            count: Enumerable
+              .From(g.source)
+              .Sum(function(s) { return Number(s.count); })
+          });
+        });
+    } else {
+      Enumerable
+        .From(currentDateRangeData)
+        .GroupBy('$.appName')
+        .ForEach(function(g) {
+          appArray.push({
+            name: g.Key(),
+            appName: g.source[0].appName,
+            count: Enumerable
+              .From(g.source)
+              .Sum(function(s) { return Number(s.count); })
+          });
+        });
+    }
+    appArray.sort(function(a,b) { return b.count - a.count }); 
+    
+    return appArray.splice(0,10);
+  }
+  
+  function topTenAppsTable() {
+    var topTenApps = [];
+    var temp = getTopTenApps();
+    temp.forEach(function(app) {
+      topTenApps.push(app.name);
+      //topTenAppsKVPair[app.name] = app.appName;
+    });
+    
+    topTenAppsData = 
+    Enumerable
+      .From(currentDateRangeData)
+      .Where(function(r) { return r.appName == topTenApps[0] || r.appName == topTenApps[1] || r.appName == topTenApps[2] || r.appName == topTenApps[3] || r.appName == topTenApps[4] || r.appName == topTenApps[5] || r.appName == topTenApps[6] || r.appName == topTenApps[7] || r.appName == topTenApps[8] || r.appName == topTenApps[9]; } )
+      .ToArray();  
+  }
+  
+  // Display applied filters in chart titles
+  function addToChartTitle() {
+    var filterFields = [];
+    linqColumns.forEach(function(column) {
+      filterFields.push(column.substring(2));
+    });
+    var string = "";
+    filterFields.forEach(function(button) {
+      var filterName = selectedFilters[button];
+      if (typeof filterName == "string" && filterName != "None") {
+        string += " | " + button.toUpperCase() + ": " + filterName;
+      }
+    });
+    
+    if (string.length == 0) {
+      return "";
+    } else {
+      return " " + string;
+    }
+  }
+
+  function passRateTitle() {
+    $('.pass-rate-title').empty();
+    $('.pass-rate-title').append('<h3>Pass Rate</h3>');
+  }
+  
+  function errorCategoriesTitle() {
+    $('.error-cat-title').empty();
+    var filters = addToChartTitle();
+    $('.error-cat-title').append('<h3>Error Categories' + filters + '</h3>');
+  }
+  
+  function errorCodesTitle(title) {
+    $('.error-code-title').empty();
+    if (typeof title == "undefined") {
+      $('.error-code-title').append('<h3>Error Codes</h3>');
+    } else {
+      $('.error-code-title').append('<h3>' + title + '</h3>');
+    }
+  }
+  
+  function drawDashboardCharts() {
+    for(var i = 0; i < dashboardChartClasses.length - 1; i++) {
+      $(dashboardChartClasses[i]).highcharts({
+        chart: {
+          type: 'column',
+          spacingRight: 0,
+          spacingLeft: 0,
+          alignTicks: false,
+          zoomType: 'x',
+          panning: true,
+          panKey: 'shift'
+        },
+        credits: {
+          enabled: false
+        },
+        title: {
+          text: titles[i]
+        },
+        xAxis: {
+          type: 'category',
+          labels: { 
+            rotation: -45,
+            formatter: function() {
+              var temp = this.value
+              if(temp.length > 20) {
+                temp = temp.slice(0, 20) + '...';
+              } else if(temp.length < 20) {
+                while(temp.length < 20) {
+                  temp = "-" + temp;
+                }
+              }
+              return '<span title="'+ this.value +'">' + temp + '</span>'; // #3
+            },
+            useHTML: true // #4
+          }
+        },
+        yAxis: [
+          {
+            title: { text: 'Pass Rate' },
+            max: 100
+          },
+          {
+            title: { text: '# of Requests' },
+            opposite: true,
+            min: 0,
+            gridLineWidth: 0
+          }
+        ],
+        plotOptions: {
+          column: {
+            stacking: 'percent',
+            tooltip: {
+              pointFormat: '<span style="color:{series.color}">{series.name}</span>: <b>{point.y}</b> ({point.percentage:.2f}%)<br/>',
+              shared: true
+            }
+          }
+        },
+        legend: {
+          enabled: false
+        },
+        series: allSeriesData[i]
+      });
+    }
+  }
+  
+  function drawDashChartWithLegend() {
+    $(dashboardChartClasses[dashboardChartClasses.length - 1]).highcharts({
+        chart: {
+          type: 'column',
+          spacingRight: 0,
+          spacingLeft: 0,
+          alignTicks: false,
+          zoomType: 'x',
+          panning: true,
+          panKey: 'shift'
+        },
+        credits: {
+          enabled: false
+        },
+        title: {
+          text: titles[dashboardChartClasses.length - 1]
+        },
+        xAxis: {
+          type: 'category',
+          labels: { 
+            rotation: -45,
+            formatter: function() {
+              var temp = this.value
+              if(temp.length > 20) {
+                temp = temp.slice(0, 20) + '...';
+              } else if(temp.length < 20) {
+                while(temp.length < 20) {
+                  temp = "-" + temp;
+                }
+              }
+              return '<span title="'+ this.value +'">' + temp + '</span>'; // #3
+            },
+            useHTML: true // #4
+          }
+        },
+        yAxis: [
+          {
+            title: { text: 'Pass Rate' },
+            max: 100
+          },
+          {
+            title: { text: '# of Requests' },
+            opposite: true,
+            min: 0,
+            gridLineWidth: 0
+          }
+        ],
+        legend: {
+          align: 'left',
+          layout: 'vertical',
+          verticalAlign: 'middle',
+          borderColor: 'black',
+          borderWidth: 1
+        },
+        plotOptions: {
+          column: {
+            stacking: 'percent',
+            tooltip: {
+              pointFormat: '<span style="color:{series.color}">{series.name}</span>: <b>{point.y}</b> ({point.percentage:.2f}%)<br/>',
+              shared: true
+            }
+          },
+          series: {
+            events: {
+              legendItemClick: function(event) {
+                return false;
+              }
+            }
+          }
+        },
+        series: allSeriesData[dashboardChartClasses.length - 1]
+      });
+  }
+  
+  function drawErrorCharts() {
+    for(var i = 0; i < errorChartClasses.length - 1; i++) {
+      var chartType = linqColumns[i].substring(2);
+      $(errorChartClasses[i]).highcharts({
+        chart: {
+          type: 'column',
+          height: 350,
+          spacingRight: 0,
+          spacingLeft: 0,
+          alignTicks: false,
+          zoomType: 'x',
+          panning: true,
+          panKey: 'shift'
+        },
+        credits: {
+          enabled: false
+        },
+        title: {
+          text: titles[i]
+        },
+        xAxis: {
+          type: 'category',
+          labels: { 
+            rotation: -45,
+             formatter: function() {
+              var temp = this.value
+              if(temp.length > 20) {
+                temp = temp.slice(0, 20) + '...';
+              } else if(temp.length < 20) {
+                while(temp.length < 20) {
+                  temp = "-" + temp;
+                }
+              }
+              return '<span title="'+ this.value +'">' + temp + '</span>'; // #3
+            },
+            useHTML: true 
+          }
+        },
+        drilldown: {
+          activeAxisLabelStyle: {
+            textDecoration: 'none',
+            color: '#6d869f'
+          }
+        },
+        yAxis: [
+          {
+            title: { text: 'Error Count' },
+          },
+          {
+            title: { text: '# of Requests' },
+            opposite: true,
+            min: 0,
+            gridLineWidth: 0
+          }
+        ],
+        plotOptions: {
+          column: {
+            stacking: 'normal',
+            allowPointSelect: true,
+            cursor: 'pointer',
+            point: {
+              events: {
+                click: function(event) {
+                  onErrCatClicked.apply(this, [event]);
+                },
+              }
+            },
+            tooltip: {
+              pointFormat: '<span style="color:{series.color}">{series.name}</span>: <b>{point.y}</b> <br/>',
+              shared: true
+            }
+          }
+        },
+        legend: {
+          enabled: false
+        },
+        series: allErrCatSersData[i],
+      });
+      
+      if(typeof selectedFilters[chartType] == 'undefined' || selectedFilters[chartType] == 'None') {
+        $(errorChartClasses[i]).highcharts().setTitle({
+          style: {
+            color: 'black'
+          }   
+        });
+      } else {
+        $(errorChartClasses[i]).highcharts().setTitle({
+          style: {
+            color: 'orange'
+          }   
+        });
+      }
+    }
+  }
+  
+  function drawErrChartWithLegend() {
+    $(errorChartClasses[errorChartClasses.length - 1]).highcharts({
+      chart: {
+        type: 'column',
+        height: 350,
+        spacingRight: 0,
+        spacingLeft: 0,
+        alignTicks: false,
+        zoomType: 'x',
+        panning: true,
+        panKey: 'shift'
+      },
+      credits: {
+        enabled: false
+      },
+      title: {
+        text: titles[errorChartClasses.length - 1]
+      },
+      xAxis: {
+        type: 'category',
+        labels: { 
+          rotation: -45,
+          formatter: function() {
+            var temp = this.value
+            if(temp.length > 20) {
+              temp = temp.slice(0, 20) + '...';
+            } else if(temp.length < 20) {
+              while(temp.length < 20) {
+                temp = "-" + temp;
+              }
+            }
+            return '<span title="'+ this.value +'">' + temp + '</span>'; // #3
+            },
+          useHTML: true // #4
+        }
+      },
+      drilldown: {
+        activeAxisLabelStyle: {
+          textDecoration: 'none',
+          color: '#6d869f'
+        }
+      },
+      yAxis: [
+        {
+          title: { text: 'Error Count' },
+        },
+        {
+          title: { text: '# of Requests' },
+          opposite: true,
+          min: 0,
+          gridLineWidth: 0
+        }
+      ],
+      legend: {
+        align: 'left',
+        layout: 'vertical',
+        verticalAlign: 'middle',
+        labelFormatter: function() {
+          var temp = this.name.length > 20 ? (this.name.slice(0, 20) + '...') : this.name; 
+          return '<span title="'+ this.name +'">' + temp + '</span>';
+        },
+        useHTML: true,
+        borderColor: 'black',
+        borderWidth: 1
+      },
+      plotOptions: {
+        column: {
+          stacking: 'normal',
+          allowPointSelect: true,
+          cursor: 'pointer',
+          size: 250,
+          point: {
+            events: {
+              click: function(event) {
+                onErrCatClicked.apply(this, [event]);
+              },
+            }
+          },
+          tooltip: {
+            pointFormat: '<span style="color:{series.color}">{series.name}</span>: <b>{point.y}</b> <br/>',
+            shared: true
+          }
+        },
+        series: {
+          events: {
+            legendItemClick: function(event) {
+              for(var i = 0; i < errorChartClasses.length - 1; i++) {
+                var XYZ = $(errorChartClasses[i]).highcharts();
+                var series = XYZ.get(this.options.id); //get corresponding series
+                if (series) {
+                  if (this.visible) {
+                    series.hide();
+                  } else {
+                    series.show();
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      series: allErrCatSersData[errorChartClasses.length - 1]
+    });
+    
+    if(typeof selectedFilters['appName'] == 'undefined' || selectedFilters['appName'] == 'None') {
+      $(errorChartClasses[errorChartClasses.length - 1]).highcharts().setTitle({
+        style: {
+          color: 'black'
+        }   
+      });
+    } else {
+      $(errorChartClasses[errorChartClasses.length - 1]).highcharts().setTitle({
+        style: {
+          color: 'orange'
+        }   
+      });
+    }
+  }
+  
+  function drawErrCodeChart(chart, seriesData, title) {
+    $(chart).highcharts({
+      chart: {
+          type: 'column',
+          height: 350,
+          spacingRight: 0,
+          spacingLeft: 0,
+          zoomType: 'x',
+          panning: true,
+          panKey: 'shift'
+        },
+        credits: {
+          enabled: false
+        },
+      title: {
+        text: title
+      },
+      xAxis: {
+        type: 'category',
+        labels: { 
+          rotation: -45,
+        formatter: function() {
+            var temp = this.value
+            if(temp.length > 20) {
+              temp = temp.slice(0, 20) + '...';
+            } else if(temp.length < 20) {
+              while(temp.length < 20) {
+                temp = "-" + temp;
+              }
+            }
+            return '<span title="'+ this.value +'">' + temp + '</span>'; // #3
+            },
+          useHTML: true // #4
+        }
+      },
+      yAxis: [
+        {
+          title: { text: 'Error Count' },
+        },
+        // {
+        //   title: { text: 'Total Errors' },
+        //   opposite: true,
+        //   min: 0 
+        // }
+      ],
+      plotOptions: {
+        column: {
+          stacking: 'normal',
+          tooltip: {
+            pointFormat: '<span style="color:{series.color}">{series.name}</span>: <b>{point.y}</b> <br/>',
+            shared: true
+          }
+        }
+      },
+      legend: {
+        enabled: false
+      },
+      series: seriesData
+    });
+  }
+  
+  function drawErrCodeWithLegend(chart, seriesData, title) {
+    $(chart).highcharts({
+      chart: {
+        type: 'column',
+        height: 350,
+        spacingRight: 0,
+        spacingLeft: 0
+      },
+      credits: {
+        enabled: false
+      },
+      title: {
+        text: title
+      },
+      xAxis: {
+        type: 'category',
+        labels: { 
+          rotation: -45,
+          formatter: function() {
+            var temp = this.value
+            if(temp.length > 20) {
+              temp = temp.slice(0, 20) + '...';
+            } else if(temp.length < 20) {
+              while(temp.length < 20) {
+                temp = "-" + temp;
+              }
+            }
+            return '<span title="'+ this.value +'">' + temp + '</span>'; // #3
+          },
+          useHTML: true // #4
+        }
+      },
+      yAxis: [
+        {
+          title: { text: 'Error Count' },
+        },
+        // {
+        //   title: { text: 'Total Errors' },
+        //   opposite: true,
+        //   min: 0 
+        // }
+      ],
+      legend: {
+        align: 'right',
+        layout: 'vertical',
+        verticalAlign: 'middle',
+        labelFormatter: function() {
+          var temp = this.name.length > 20 ? (this.name.slice(0, 20) + '...') : this.name; 
+          return '<span title="'+ this.name +'">' + temp + '</span>';
+        },
+        useHTML: true,
+        borderColor: 'black',
+        borderWidth: 1
+      },
+      plotOptions: {
+        column: {
+          stacking: 'normal',
+          tooltip: {
+            pointFormat: '<span style="color:{series.color}">{series.name}</span>: <b>{point.y}</b> <br/>',
+            shared: true
+          }
+        },
+        series: {
+          events: {
+            legendItemClick: function(event) {
+              for(var i = 0; i < errorCodeClasses.length - 1; i++) {
+                var XYZ = $(errorCodeClasses[i]).highcharts();
+                var series = XYZ.get(this.options.id); //get corresponding series
+                if (series) {
+                  if (this.visible) {
+                    series.hide();
+                  } else {
+                    series.show();
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      series: seriesData
+    });
+  }
+  
+  function drawErrCodeCharts() {
+    for(var i = 0; i < errorCodeClasses.length - 1; i++) {
+      drawErrCodeChart(errorCodeClasses[i], allErrCodeSersData[i], codeTitles[i]);
+    }
+    drawErrCodeWithLegend(errorCodeClasses[errorCodeClasses.length - 1], allErrCodeSersData[allErrCodeSersData.length - 1], codeTitles[codeTitles.length - 1]);
+  }
+  
+  function onErrCatClicked(event) {
+    allErrCodeSersData = [];
+    currentErrorCodes = [];
+    var name = this;
+    var drilldownId = this.drilldown
+    var errorCategory = drilldownId.substring(drilldownId.indexOf('@') + 1);
+    var chartTitle = 'Error Codes | ' + errorCategory;
+    errorCodesTitle(chartTitle); 
+    aggregateErrCodeData(errorCategory);
+    adjustErrCodeSeries();
+    drawErrCodeCharts();
+  }
+  
+  function appErrCodeSersData(category) {
+    var allSeries = [];
+    var xAxisValues = [];
+    
+    Enumerable
+      .From(topTenAppsData)
+      .Where(function(r) { return r.error_category == category && filterBuild(r) && filterAppName(r) && filterScenario(r) && filterRegion(r) && filterProtocol(r) })
+      .OrderBy('$.appName')
+      .GroupBy('$.appName')
+      .ForEach(function(g) {
+        xAxisValues.push(g.Key());
+      }); 
+    xAxisValues.sort();
+      
+    Enumerable
+      .From(topTenAppsData)
+      .Where(function(r) { return r.error_category == category && filterBuild(r) && filterAppName(r) && filterScenario(r) && filterRegion(r) && filterProtocol(r) })
+      .OrderBy('$.err_code')
+      .GroupBy('$.err_code')
+      .ForEach(function(g) {
+        var series = {
+          id: g.Key(),
+          name: g.Key(),
+          data: []
+        };
+        
+        Enumerable
+          .From(g.source)
+          .OrderBy('$.appName')
+          .GroupBy('$.appName')
+          .ForEach(function(g2) {
+            series.data.push({
+              name: g2.Key(),
+              y: Enumerable
+                .From(g2.source)
+                .Sum(function(s) { return Number(s.count); })
+            });
+          });
+          
+        for(var i = 0; i < xAxisValues.length; i++) {
+          if (typeof series.data[i] === "undefined" || series.data[i].name != xAxisValues[i]) {
+            series.data.push({
+              name: xAxisValues[i],
+              y: 0
+            });
+            series.data.sort(compare);
+          }
+        }
+        
+        allSeries.push(series);
+      });
+      
+    return allSeries;
+  }
+  
+  function errorCodeSersData(column, category) {
+    var allSeries = [];
+    var xAxisValues = [];
+    
+    Enumerable
+      .From(currentDateRangeData)
+      .Where(function(r) { return r.error_category == category && filterBuild(r) && filterAppName(r) && filterScenario(r) && filterRegion(r) && filterProtocol(r) })
+      .OrderBy(column)
+      .GroupBy(column)
+      .ForEach(function(g) {
+        xAxisValues.push(g.Key());
+      }); 
+    xAxisValues.sort();
+    
+    var tempErrCodes = [];
+      
+    Enumerable
+      .From(currentDateRangeData)
+      .Where(function(r) { return r.error_category == category && filterBuild(r) && filterAppName(r) && filterScenario(r) && filterRegion(r) && filterProtocol(r) })
+      .OrderBy('$.err_code')
+      .GroupBy('$.err_code')
+      .ForEach(function(g) {
+        tempErrCodes.push(g.Key());
+        
+        var series = {
+          id: g.Key(),
+          name: g.Key(),
+          data: []
+        };
+        
+        Enumerable
+          .From(g.source)
+          .OrderBy(column)
+          .GroupBy(column)
+          .ForEach(function(g2) {
+            series.data.push({
+              name: g2.Key(),
+              y: Enumerable
+                .From(g2.source)
+                .Sum(function(s) { return Number(s.count); })
+            });
+          });
+          
+        for(var i = 0; i < xAxisValues.length; i++) {
+          if (typeof series.data[i] === "undefined" || series.data[i].name != xAxisValues[i]) {
+            series.data.push({
+              name: xAxisValues[i],
+              y: 0
+            });
+            series.data.sort(compare);
+          }
+        }
+        
+        allSeries.push(series);
+      });
+      
+    if(tempErrCodes.length > currentErrorCodes.length) {
+      currentErrorCodes = tempErrCodes;
+    }  
+    
+    return allSeries;
+  }
+  
+  
+  function aggregatePRSerData() {
+    for(var i = 0; i < linqColumns.length; i++) {
+      var seriesData = passRateSeriesData(linqColumns[i]);
+      allSeriesData.push(seriesData);
+    }
+  }
+  
+  function aggregateErrSerData() {
+    for(var i = 0; i < linqColumns.length - 1; i++) {
+      var errSersData = errorCatSersData(linqColumns[i]);
+      allErrCatSersData.push(errSersData);
+    }
+  }
+  
+  function aggregateErrCodeData(category) {
+    for(var i = 0; i < linqColumns.length - 1; i++) {
+      var seriesData = errorCodeSersData(linqColumns[i], category);
+      allErrCodeSersData.push(seriesData);
+    }
+    var appSeriesData = appErrCodeSersData(category);
+    allErrCodeSersData.splice(1, 0, appSeriesData);
+  }
+  
+  function passRateSeriesData(column) { 
+    var table = currentDateRangeData; 
+    if(column == '$.appName') {
+      table = topTenAppsData;
+    }
+
+    var totalErrorsSeries = {
+      name: 'Errors',
+      color: '#ff0000',
+      data: []
+    };
+    var totalRequestsSeries = { 
+      yAxis: 1,
+      type: 'line',
+      name:'Total Requests', 
+      color: 'black',
+      data: [] 
+    };
+    var successSeries = {
+      name: 'Success',
+      color: '#33cc00',
+      data: []
+    };
+    
+    var completeSeries = [];
+    var columnName = column.substring(2);
+    var items = [];
+    
+    Enumerable
+      .From(table)
+      .OrderBy(column)
+      .GroupBy(column)
+      .ForEach(function(g) {
+        totalErrorsSeries.data.push({
+          name: g.Key(),
+          y: Enumerable
+              .From(g.source)
+              .Where(function(r) { return r.result == "error" })
+              .Sum(function(s) { return Number(s.count); })
+        });
+        successSeries.data.push({
+          name: g.Key(),
+          y: Enumerable
+              .From(g.source)
+              .Where(function(r) { return r.result != "error" })
+              .Sum(function(s) { return Number(s.count); })
+        });
+        totalRequestsSeries.data.push({
+          name: g.Key(), 
+          y: Enumerable
+              .From(g.source)
+              .Sum(function(s) { return Number(s.count); })
+        });
+        items.push(g.Key());
+      });
+    
+    // Collect filter checkbox labels 
+    filterTypes[columnName] = items;   
+    
+    completeSeries.push(totalErrorsSeries);
+    completeSeries.push(successSeries);
+    completeSeries.push(totalRequestsSeries);
+  
+    return completeSeries;
+  }
+  
+  // Helper method to for sorting series data by name key
+  function compare(a,b) {
+    if (a.name < b.name)
+      return -1;
+    else if (a.name > b.name)
+      return 1;
+    else 
+      return 0;
+  }
+  
+  function errorCatSersData(column) {
+    var table = currentDateRangeData;
+
+    var allSeries = [];
+    
+    // CREATE SERIES FOR TOTAL ERRORS WITH NO FILTERS (PART 1)
+    // var totalErrorsSeries = {
+    //   yAxis: 1,
+    //   type: 'line',
+    //   name:'Total Errors', 
+    //   color: 'black',
+    //   data: [] 
+    // };
+
+    var totalRequestsSeries = { 
+      yAxis: 1,
+      type: 'line',
+      id: 'totalRequestsSeries',
+      name:'Total Requests', 
+      color: 'black',
+      data: [] 
+    };
+    
+    var xAxisValues = [];
+    
+    Enumerable
+      .From(table)
+      .OrderBy(column)
+      .GroupBy(column)
+      .ForEach(function(g) {
+        var gKey = g.Key();
+        if(column == '$.appName') {
+          gKey = gKey.toUpperCase();
+        }
+        totalRequestsSeries.data.push({
+          name:gKey, 
+          y: Enumerable
+              .From(g.source)
+              .Sum(function(s) { return Number(s.count); })
+        });
+        
+        // CREATE SERIES FOR TOTAL ERRORS WITH NO FILTERS (PART 2)
+        // totalErrorsSeries.data.push({
+        //   name: g.Key(),
+        //   y: Enumerable
+        //       .From(g.source)
+        //       .Where(function(r) { return r.result == "error" })
+        //       .Sum(function(s) { return Number(s.count); })
+        // });
+        if (typeof gKey == "undefined") {
+          xAxisValues.push("Unknown")
+        } else {
+          xAxisValues.push(gKey);
+        }
+      });
+    xAxisValues.sort();
+      
+    // CREATE SERIES FOR TOTAL ERRORS WITH APPLIED FILTERS  
+    // var totalCatErrSeries = {
+    //   yAxis: 1,
+    //   type: 'line',
+    //   id: 'totalCatErrSeries',
+    //   name: 'Total Errors with Filters',
+    //   color: 'red',
+    //   data: []
+    // };      
+    // Enumerable
+    //   .From(currentDateRangeData)
+    //   .OrderBy(column)
+    //   .GroupBy(column)
+    //   .ForEach(function(g) {
+    //     totalCatErrSeries.data.push({
+    //       name: g.Key(),
+    //       y: Enumerable
+    //           .From(g.source)
+    //           .Where(function(r) { return r.result == "error" && filterBuild(r) && filterAppName(r) && filterScenario(r) && filterRegion(r) && filterProtocol(r) })
+    //           .Sum(function(s) { return Number(s.count); })
+    //     });
+    //   });
+      
+    // CREATE SERIES FOR TOTAL REQUESTS WITH APPLIED FILTERS  
+    // var totalReqWithFilters = {
+    //   yAxis: 1,
+    //   type: 'line',
+    //   id: 'totalReqWithFilters',
+    //   name: 'Total Requests with Filters',
+    //   color: 'grey',
+    //   data: []
+    // };
+    // Enumerable
+    //   .From(currentDateRangeData)
+    //   .OrderBy(column)
+    //   .GroupBy(column)
+    //   .ForEach(function(g) {
+    //     totalReqWithFilters.data.push({
+    //       name: g.Key(),
+    //       y: Enumerable
+    //           .From(g.source)
+    //           .Where(function(r) { return filterBuild(r) && filterAppName(r) && filterScenario(r) && filterRegion(r) && filterProtocol(r) })
+    //           .Sum(function(s) { return Number(s.count); })
+    //     });
+    //   });
+    var tempErrorCategories = [];
+    
+    Enumerable
+      .From(table)
+      .Where(function(r) { return r.result == "error" && filterBuild(r) && filterAppName(r) && filterScenario(r) && filterRegion(r) && filterProtocol(r) })
+      .OrderBy('$.error_category')
+      .GroupBy('$.error_category')
+      .ForEach(function(g) {
+        var series = { id: g.Key(), name: g.Key(), data: [] };
+        tempErrorCategories.push(g.Key());
+        
+        Enumerable
+          .From(g.source)
+          .OrderBy(column)
+          .GroupBy(column)
+          .ForEach(function(g2) { 
+            var g2Key = g2.Key();
+            if(column == '$.appName') {
+              g2Key = g2Key.toUpperCase();
+            }
+            var currentSeries = [];
+            series.data.forEach(function(data) {
+              currentSeries.push(data.name);
+            });
+
+            if(currentSeries.includes(g2Key) === false) {
+              series.data.push({ 
+                name: g2Key,
+                y: Enumerable
+                  .From(g2.source)
+                  .Sum(function(s) { return Number(s.count); }),
+                drilldown: g2Key + "@" + g.Key()
+              });
+            }
+          });
+         
+        for(var i = 0; i < xAxisValues.length; i++) {
+          if (typeof series.data[i] === "undefined" || series.data[i].name != xAxisValues[i]) {
+            series.data.push({
+              name: xAxisValues[i],
+              y: 0
+            });
+            series.data.sort(compare);
+          }
+        }
+           
+        allSeries.push(series);
+      });
+      
+    if(tempErrorCategories.length > errorCategories.length) {
+      errorCategories = tempErrorCategories;
+    }
+      
+    // CREATE SERIES FOR SUCCESSFUL REQUESTS WITH ALL APPLIED FILTERS
+    // var successSeries = {
+    //   name: 'Success',
+    //   color: '#33cc00',
+    //   data: []
+    // };
+    // Enumerable
+    //   .From(currentDateRangeData)
+    //   .Where(function(r) { return r.result != "error" && filterBuild(r) && filterAppName(r) && filterScenario(r) && filterRegion(r) && filterProtocol(r) })
+    //   .OrderBy(column)
+    //   .GroupBy(column)
+    //   .ForEach(function(g) {
+    //     successSeries.data.push({
+    //       name: g.Key(),
+    //       y: Enumerable
+    //         .From(g.source)
+    //         .Sum(function(s) { return Number(s.count); })
+    //     });
+    //   });  
+    // for(var i = 0; i < xAxisValues.length; i++) {
+    //   if (typeof successSeries.data[i] === "undefined" || successSeries.data[i].name != xAxisValues[i]) {
+    //     successSeries.data.push({
+    //       name: xAxisValues[i],
+    //       y: 0
+    //     });
+    //     successSeries.data.sort(compare);
+    //   }
+    // }
+    totalRequestsSeries.data.sort(compare);
+    //allSeries.push(successSeries);
+    allSeries.push(totalRequestsSeries);
+    // allSeries.push(totalCatErrSeries);
+    // allSeries.push(totalReqWithFilters);
+    
+    return allSeries;
+  }
+  
+  function appErrCatSersData() {
+    var allSeries = [];
+
+    var totalRequestsSeries = { 
+      yAxis: 1,
+      type: 'line',
+      id: 'totalRequestsSeries',
+      name:'Total Requests', 
+      color: 'black',
+      data: [] 
+    };
+    
+    var xAxisValues = [];
+    
+    Enumerable
+      .From(topTenAppsData)
+      .OrderBy('$.appName')
+      .GroupBy('$.appName')
+      .ForEach(function(g) {
+        totalRequestsSeries.data.push({
+          name: g.Key(), 
+          y: Enumerable
+              .From(g.source)
+              .Sum(function(s) { return Number(s.count); })
+        });
+        
+        if (typeof g.Key() == "undefined") {
+          xAxisValues.push("Unknown")
+        } else {
+          xAxisValues.push(g.Key());
+        }
+      });
+    xAxisValues.sort();
+
+    Enumerable
+      .From(topTenAppsData)
+      .Where(function(r) { return r.result == "error" && filterBuild(r) && filterAppName(r) && filterScenario(r) && filterRegion(r) && filterProtocol(r) })
+      .OrderBy('$.error_category')
+      .GroupBy('$.error_category')
+      .ForEach(function(g) {
+        var series = { id: g.Key(), name: g.Key(), data: [] };
+        
+        Enumerable
+          .From(g.source)
+          .OrderBy('$.appName')
+          .GroupBy('$.appName')
+          .ForEach(function(g2) { 
+            series.data.push({ 
+              name: g2.Key(),
+              y: Enumerable
+                .From(g2.source)
+                .Sum(function(s) { return Number(s.count); }),
+              drilldown: g2.Key() + "@" + g.Key()
+            });
+          });
+        
+        for(var i = 0; i < xAxisValues.length; i++) {
+          if (typeof series.data[i] === "undefined" || series.data[i].name != xAxisValues[i]) {
+            series.data.push({
+              name: xAxisValues[i],
+              y: 0
+            });
+            series.data.sort(compare);
+          }
+        }
+           
+        allSeries.push(series);
+      });  
+      
+    totalRequestsSeries.data.sort(compare);
+    allSeries.push(totalRequestsSeries);
+    allErrCatSersData.push(allSeries);
+  }
+  
+  function adjustErrCatSeries() {
+    errorCategories.push('Total Requests');
+    allErrCatSersData.forEach(function(allSeries) {    
+      var ci = 0;
+      for(var i = 0; i < errorCategories.length; i++) {
+        if (typeof allSeries[i] === "undefined" || allSeries[i].name != errorCategories[i]) {
+          var missingSeries = {
+            name: errorCategories[i],
+            id: errorCategories[i],
+            color: colors[ci],
+            data: []
+          }
+          
+          var xAxisValues = [];
+          allSeries[i].data.forEach(function(object) {
+            xAxisValues.push(object.name);
+          });
+          
+          xAxisValues.forEach(function(appname) {
+            missingSeries.data.push({
+              name: appname,
+              y: 0,
+              drilldown: appname + "@" + errorCategories[i]
+            });
+          });
+          ci = ci + 2;
+          allSeries.push(missingSeries);
+          allSeries.sort(compare);
+        } else if(allSeries[i].name == 'Total Requests') {
+          allSeries[i].color = 'black';
+        } else {
+          allSeries[i].color = colors[ci];
+          ci = ci + 2;
+        }
+      }
+    });
+  }
+    
+  function adjustErrCodeSeries() {
+    allErrCodeSersData.forEach(function(allSeries) {    
+      for(var i = 0; i < currentErrorCodes.length; i++) {
+        if (typeof allSeries[i] === "undefined" || allSeries[i].name != currentErrorCodes[i]) {
+          var missingSeries = {
+            name: currentErrorCodes[i],
+            id: currentErrorCodes[i],
+            data: []
+          }
+          
+          var xAxisValues = [];
+          if(typeof allSeries[i] != "undefined") {
+            allSeries[i].data.forEach(function(object) {
+              xAxisValues.push(object.name);
+            });
+          } else {
+            xAxisValues.push(100);
+          }
+          
+          xAxisValues.forEach(function(appname) {
+            missingSeries.data.push({
+              name: appname,
+              y: 0
+            });
+          });
+          
+          allSeries.push(missingSeries);
+          allSeries.sort(compare);
+        }
+      }
+    });
+  }
+  
+  function emptyErrorCharts() {
+    errorChartClasses.forEach(function(chart) {
+      $(chart).empty();
+    });
+  }
+  
+  function emptyErrorCodeCharts() {
+    errorCodeClasses.forEach(function(chart) {
+      $(chart).empty();
+    });
+  }
+  
+  function clearAllSeriesData() {
+    currentDateRangeData = [];
+    allSeriesData = [];
+    allErrCatSersData = [];
+    allErrCodeSersData = [];
+    errorCategories = [];
+  }
+  
+  function clearErrorSeriesData() {
+    allErrCatSersData = [];
+    allErrCodeSersData = [];
+    errorCategories = [];
+  }
+  
+  function aggregateFilters() {
+    var filterFields = [];
+    linqColumns.forEach(function(column) {
+      filterFields.push(column.substring(2));
+    });
+    
+    filterFields.forEach(function(button) {
+      selectedFilters[button] = document.getElementById(button).value;
+    });  
+  }
+  
+  function onGo() {
+    updateProtocol();
+    //console.dir("update protocol");
+  }
+  
+  function updateErrorCharts() {
+    clearErrorSeriesData();
+    aggregateFilters();
+    aggregateErrSerData();
+    appErrCatSersData();
+    adjustErrCatSeries();
+    emptyErrorCharts();
+    errorCategoriesTitle();
+    errorCodesTitle();
+    drawErrorCharts();
+    drawErrChartWithLegend();
+    emptyErrorCodeCharts();
+  }
+  
+  function updateProtocol() {
+    clearAllSeriesData();
+    setDateRange(currentStartDate, currentEndDate);
+    topTenAppsTable();
+    aggregatePRSerData();
+    aggregateErrSerData();
+    appErrCatSersData();
+    adjustErrCatSeries();
+    passRateTitle();
+    drawDashboardCharts();
+    drawDashChartWithLegend();
+    filterDropDowns();
+    errorCategoriesTitle();
+    errorCodesTitle();
+    drawErrorCharts();
+    drawErrChartWithLegend();
+    emptyErrorCodeCharts();
+  }
+  
+  initializeDateRange();  
+  avo.api.data.fetchData({
+    success: function(data) {
+      prepareData(data);
+      updateProtocol();
+    }
+  });
+</script>

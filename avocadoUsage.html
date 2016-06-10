@@ -1,0 +1,553 @@
+<div class="report-header"></div>
+<select id="start-date" onchange="onStartDateChange()">
+  <option value="" selected="selected"></option>
+</select>
+<select id="end-date" onchange="onEndDateChange()">
+  <option value="" selected="selected"></option>
+</select>
+<button onClick="onGo()">Go</button>
+<button class="latency-link" style="float:right"><a href="https://avocado/reports/162740" target="_blank" style="text-decoration:none">Latency</a></button>
+<button class="errors-link" style="float:right"><a href="https://avocado/reports/152006" target="_blank" style="text-decoration:none">Errors</a></button>
+<div class="line" style="background-color:black; height:2px"></div>
+
+<div class="usage-charts-title" style="display:inline-block; width:100%; float:left; font-size:20px; background-color:lightgrey; text-align:center;"></div>
+<div class="topten-apps-title" style="display:inline-block; width:100%; float:left; font-size:20px; background-color:lightgrey; text-align:center; font-weight:bold;">Top 10 Applications</div>
+<div class="topten-appsinautod-chart" style="display:inline-block; width:33%; float:left;"></div>
+<div class="topten-appsinews-chart" style="display:inline-block; width:33%; float:left;"></div>
+<div class="topten-appsinrest-chart" style="display:inline-block; width:33%; float:left;"></div>
+
+<div class="line" style="background-color:black; height:2px; display:block; width:100%; float:left;"></div>
+
+<div class="topten-errors-chart" style="display:inline-block; width:33%; float:left;"></div>
+<div class="pass-rate-chart" style="display:inline-block; width:33%; float:left;"></div>
+<div class="errors-in-day-chart" style="display:inline-block; width:33%; float:left;"></div>
+
+<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/linq.js/2.2.0.2/linq.min.js"></script>
+
+<script>
+  var protocols = [
+    "Ews",
+    "AutoDiscover",
+    "Rest"
+  ];
+  
+  var toptenAppsClasses = [
+    ".topten-appsinews-chart",
+    ".topten-appsinautod-chart",
+    ".topten-appsinrest-chart"
+  ];
+
+  var currentData = [];
+  var currentDateRangeData = [];
+  var allDays = [];
+  var currentStartDate = "";
+  var currentEndDate = "";
+  
+  var twoDaysAgo = new Date();
+  twoDaysAgo.setDate(twoDaysAgo.getDate()-3);
+  console.dir(twoDaysAgo);
+  var month = ((twoDaysAgo.getUTCMonth() + 1).toString().length < 2) ? ("0" + (twoDaysAgo.getUTCMonth() + 1).toString()) : ((twoDaysAgo.getUTCMonth() + 1).toString());
+  var day = (twoDaysAgo.getUTCDate().toString().length < 2) ? ("0" + twoDaysAgo.getUTCDate().toString()) : (twoDaysAgo.getUTCDate().toString());
+  var year = twoDaysAgo.getUTCFullYear().toString();
+
+  var currentDay = year + "-" + month + "-" + day;
+  var topTenAppsData;
+  
+  /* Create and render the header view */
+  var header = new avo.api.layout.Header({ report: report });
+  $('.report-header').html(header.render().el);
+  
+  function getAllDays() {
+    Enumerable
+    .From(currentData)
+    .OrderBy('$.day')
+    .GroupBy('$.day')
+    .ForEach(function(g) {
+      allDays.push(g.source[0].day);
+    });  
+    allDays.sort();
+    tt1 = document.getElementById('start-date');
+    tt2 = document.getElementById('end-date');
+    for(var i = 0; i < allDays.length; i++) {
+      tt1.options[tt1.options.length] = new Option(allDays[i], allDays[i]);
+      tt2.options[tt2.options.length] = new Option(allDays[i], allDays[i]);
+    }
+  }
+  
+  function initializeDateRange() {
+    var today = new Date(Date.now());
+    var initialStartDate = new Date();
+    var initialEndDate = new Date();
+    
+    initialStartDate.setDate(today.getDate() - 9);
+    initialEndDate.setDate(today.getDate() - 2);
+    
+    currentStartDate = initialStartDate.toLocaleDateString("en-US");
+    currentEndDate = initialEndDate.toLocaleDateString("en-US");
+
+    $('#start-date option').html(currentStartDate);
+    $('#start-date option').val(currentStartDate);
+    $('#end-date option').html(currentEndDate);
+    $('#end-date option').val(currentEndDate);
+  }
+  
+  function onStartDateChange() {
+    console.dir("onStartDateChange");
+    currentStartDate = document.getElementById("start-date").value;
+    console.dir(currentStartDate);
+  }
+  
+  function onEndDateChange() {
+    console.dir("onEndDateChange");
+    currentEndDate = document.getElementById("end-date").value;
+    console.dir(currentEndDate);
+  }
+  
+  function setDateRange(startDate, endDate) {
+    var start = new Date(startDate);
+    var end = new Date(endDate);
+    currentDateRangeData = 
+      Enumerable
+        .From(currentData)
+        .Where(function(r) { 
+          var day = new Date(r.day);
+          return day >= start && day <= end; 
+        })
+        .ToArray();
+  }
+  
+  function getLinqData(data, num) {
+    return Enumerable
+      .From(data[num].data)
+      .Where(function(r) { return r.env == "PROD" && r.error_category != "OAuthNotAvailable"; })
+      .ToArray();
+  }
+  
+  function prepareData(data) {
+    currentData = getLinqData(data, 376869);
+    getAllDays();
+  }
+  
+  function getTopTenApps(protocol) {
+    var appArray = [];
+
+    if(protocol != null) {
+      Enumerable
+        .From(currentDateRangeData)
+        .Where(function(r) { return r.protocol == protocol && r.result == "success"; })
+        .GroupBy('$.appName')
+        .ForEach(function(g) {
+          appArray.push({
+            name: g.Key(),
+            appName: g.source[0].appName,
+            count: Enumerable
+              .From(g.source)
+              .Sum(function(s) { return Number(s.count); })
+          });
+        });
+    } else {
+      Enumerable
+        .From(currentDateRangeData)
+        .Where(function(r) { return r.result == "success"; })
+        .GroupBy('$.appName')
+        .ForEach(function(g) {
+          appArray.push({
+            name: g.Key(),
+            appName: g.source[0].appName,
+            count: Enumerable
+              .From(g.source)
+              .Sum(function(s) { return Number(s.count); })
+          });
+        });
+    }
+    appArray.sort(function(a,b) { return b.count - a.count }); 
+    
+    return appArray.splice(0,10);
+  }
+  
+  function passRateChart() {
+    $('.pass-rate-chart').highcharts({
+      chart: {
+        type: 'column',
+        spacingRight: 0,
+        spacingLeft: 0,
+        alignTicks: false
+      },
+      credits: {
+        enabled: false
+      },
+      title: { 
+        text: "Daily Pass Rate",
+        style: {
+          fontWeight: 'bold'
+        }
+      },
+      xAxis: {
+        type: 'category',
+        labels: {
+          rotation: -45,
+          formatter: function() {
+            var temp = this.value
+            if(temp.length > 20) {
+              temp = temp.slice(0, 20) + '...';
+            } else if(temp.length < 20) {
+              while(temp.length < 20) {
+                temp = "-" + temp;
+              }
+            }
+            return '<span title="'+ this.value +'">' + temp + '</span>'; // #3
+          },
+          useHTML: true // #4
+        }
+      },
+      yAxis: [
+        {
+          title: { text: 'Pass Rate' },
+          max: 100
+        },
+        {
+          title: { text: '# of Requests' },
+          opposite: true,
+          min: 0,
+          gridLineWidth: 0
+        }
+      ],
+      plotOptions: {
+        column: {
+          stacking: 'percent',
+          allowPointSelect: true,
+          cursor: 'pointer',
+          point: {
+            events: {
+              click: function(event) {
+                onDayClicked.apply(this, [event]);
+              },
+            }
+          },
+          tooltip: {
+            pointFormat: '<span style="color:{series.color}">{series.name}</span>: <b>{point.y}</b> ({point.percentage:.2f}%)<br/>',
+            shared: true
+          }
+        }
+      },
+      legend: { enabled: false },
+      series: generatePRByDay()
+    });
+  }
+  
+  function errorsByDayChart(day) {
+    console.dir(day);
+    if(typeof day == 'undefined') {
+      day = currentDay;
+    }
+    console.dir(day);
+    var data = errorsInDayData(day);
+    $('.errors-in-day-chart').highcharts({
+      chart: {
+        type: 'column',
+        spacingRight: 0,
+        spacingLeft: 0
+      },
+      credits: {
+        enabled: false
+      },
+      title: { 
+        text: "Error Categories on " + currentDay,
+        style: {
+          fontWeight: 'bold'
+        }
+      },
+      xAxis: {
+        categories: data.xAxis,
+        labels: {
+          rotation: -45,
+          formatter: function() {
+            var temp = this.value
+            if(temp.length > 20) {
+              temp = temp.slice(0, 20) + '...';
+            } else if(temp.length < 20) {
+              while(temp.length < 20) {
+                temp = "-" + temp;
+              }
+            }
+            return '<span title="'+ this.value +'">' + temp + '</span>'; // #3
+          },
+          useHTML: true // #4
+        }
+      },
+      yAxis: {
+        title: { text: 'Error Count' },
+        type: 'logarithmic',
+        minorTickInterval: 0.1
+      },
+      legend: { enabled: false },
+      series: [{ 
+        name: 'Errors',
+        color: 'red',
+        data: data.series
+      }]
+    });
+  }
+  
+  function toptenAppsChart() {
+    for(var i = 0; i < protocols.length; i++) {
+      var temp = getTopTenApps(protocols[i]);
+      var appArray = [];
+      var seriesData = [];
+      
+      temp.forEach(function(appInfo) {
+        appArray.push(appInfo.appName);
+        seriesData.push(appInfo.count);
+      });
+      
+      $(toptenAppsClasses[i]).highcharts({
+        chart: {
+          type: 'column',
+          spacingRight: 0,
+          spacingLeft: 0
+        },
+        credits: {
+          enabled: false
+        },
+        title: { 
+          text: protocols[i],
+          style: {
+            fontWeight: 'bold'
+          }
+        },
+        xAxis: {
+          categories: appArray,
+          labels: {
+            rotation: -45,
+            formatter: function() {
+              var temp = this.value
+              if(temp.length > 20) {
+                temp = temp.slice(0, 20) + '...';
+              } else if(temp.length < 20) {
+                while(temp.length < 20) {
+                  temp = "-" + temp;
+                }
+              }
+              return '<span title="'+ this.value +'">' + temp + '</span>'; // #3
+            },
+            useHTML: true // #4
+          }
+        },
+        yAxis: {
+          title: { text: 'Request Count' },
+          type: 'logarithmic',
+          minorTickInterval: 0.1
+        },
+        legend: { enabled: false },
+        series: [{ 
+          name: 'Success',
+          data: seriesData,
+          color: '#33cc00'
+        }]
+      });
+    }
+  }
+  
+  function toptenErrorsChart() {
+    var temp = getTopTenErrors();
+    var categoriesArray = [];
+    var seriesData = [];
+    
+    temp.forEach(function(errorInfo) {
+      categoriesArray.push(errorInfo.name);
+      seriesData.push(errorInfo.count);
+    });
+    
+    $('.topten-errors-chart').highcharts({
+      chart: {
+        type: 'column',
+        spacingRight: 0,
+        spacingLeft: 0
+      },
+      credits: {
+        enabled: false
+      },
+      title: { 
+        text: "Top 10 Errors",
+        style: {
+          fontWeight: 'bold'
+        }
+      },
+      xAxis: {
+        categories: categoriesArray,
+        labels: {
+          rotation: -45,
+          formatter: function() {
+            var temp = this.value
+            if(temp.length > 20) {
+              temp = temp.slice(0, 20) + '...';
+            } else if(temp.length < 20) {
+              while(temp.length < 20) {
+                temp = "-" + temp;
+              }
+            }
+            return '<span title="'+ this.value +'">' + temp + '</span>'; // #3
+          },
+          useHTML: true // #4
+        }
+      },
+      yAxis: {
+        title: { text: 'Error Count' },
+        type: 'logarithmic',
+        minorTickInterval: 0.1
+      },
+      legend: { enabled: false },
+      series: [{ 
+        name: 'Errors',
+        color: 'red',
+        data: seriesData 
+        }]
+    });
+  }
+  
+  function generatePRByDay() {
+    var totalSeriesData = [];
+    
+    var errorSeries = {
+      name: 'Errors',
+      color: '#ff0000',
+      data: []
+    };
+    var totalRequestsSeries = { 
+      yAxis: 1,
+      type: 'line',
+      name:'Total Requests', 
+      color: 'black',
+      data: [] 
+    };
+    var successSeries = {
+      name: 'Success',
+      color: '#33cc00',
+      data: []
+    };
+    
+    Enumerable
+      .From(currentDateRangeData)
+      .OrderBy('$.day')
+      .GroupBy('$.day')
+      .ForEach(function(g) {
+        successSeries.data.push({
+          name: g.Key(),
+          y: Enumerable
+            .From(g.source)
+            .Where(function(r) { return r.result != "error" })
+            .Sum(function(s) { return Number(s.count); })
+        });
+        
+        errorSeries.data.push({
+          name: g.Key(),
+          y: Enumerable
+            .From(g.source)
+            .Where(function(r) { return r.result == "error" })
+            .Sum(function(s) { return Number(s.count); })
+        });
+        
+        totalRequestsSeries.data.push({
+          name: g.Key(),
+          y: Enumerable
+            .From(g.source)
+            .Sum(function(s) { return Number(s.count); })
+        });
+      });
+      
+    totalSeriesData.push(errorSeries);  
+    totalSeriesData.push(successSeries);
+    totalSeriesData.push(totalRequestsSeries);
+    
+    return totalSeriesData;
+  }
+  
+  function getTopTenErrors() {
+    var errorArray = [];
+    var errorCategories = [];
+    
+    Enumerable
+      .From(currentDateRangeData)
+      .Where(function(r) { return r.result == "error" })
+      .GroupBy('$.err_code')
+      .ForEach(function(g) {
+        var errorName = g.Key();
+        if(errorName == null) {
+          errorName = 'OAuthNotAvailable';
+        } 
+        errorArray.push({
+          name: errorName,
+          count: Enumerable
+            .From(g.source)
+            .Sum(function(s) { return Number(s.count); })
+        });
+      });
+    errorArray.sort(function(a,b) { return b.count - a.count });
+
+    return errorArray.splice(0,10);
+  }
+  
+  function errorsInDayData(day) {
+    var chartData = {
+      xAxis: [],
+      series: []
+    };
+    var data = [];
+    Enumerable
+      .From(currentDateRangeData)
+      .Where(function(r) { return r.day == day && r.result == 'error' })
+      .OrderBy('$.error_category')
+      .GroupBy('$.error_category')
+      .ForEach(function(g) {
+        var object = {
+          xAxis: g.Key(),
+          series: Enumerable
+          .From(g.source)
+          .Sum(function(s) { return Number(s.count); })
+        }    
+        data.push(object);
+      });
+      
+    data.sort(function(a,b) {
+      return b.series - a.series;
+    });
+    
+    data.forEach(function(pair) {
+      chartData.xAxis.push(pair.xAxis);
+      chartData.series.push(pair.series);
+    });
+    
+    return chartData;
+  }
+  
+  function onGo() {
+    updateProtocol();
+    console.dir("update protocol");
+  }
+  
+  function drawUsageCharts() {
+    passRateChart();
+    toptenErrorsChart();
+    toptenAppsChart();
+    errorsByDayChart();
+  }
+  
+  function onDayClicked(event) {
+    var day = this.name;
+    currentDay = day;
+    errorsByDayChart(day);
+  }
+  
+  function updateProtocol() {
+    setDateRange(currentStartDate, currentEndDate);
+    drawUsageCharts();
+  }
+  
+  initializeDateRange();  
+  avo.api.data.fetchData({
+    success: function(data) {
+      prepareData(data);
+      updateProtocol();
+    }
+  });
+</script>
